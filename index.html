@@ -126,7 +126,8 @@ function renderLogin(){$('#nav').innerHTML='';const c=LG.mode==='crear';
  <p class="sm" style="color:var(--bad);min-height:18px;margin-top:8px">${esc(LG.msg)}</p><p class="sm" style="color:var(--ok)">${esc(LG.ok)}</p>
  <button class="btn pri" onclick="loginEmail()">${c?'Crear mi cuenta':'Entrar'}</button>
  ${!c?'<button class="btn ghost" style="margin-top:10px" onclick="forgotPw()">¿Olvidaste tu contraseña?</button>':''}
- <p class="sm mut" style="margin-top:18px">🔒 Cada persona solo puede ver sus propios datos. Tu progreso queda guardado en tu cuenta y lo ves en el celular y el computador.</p></div>`;
+ <p class="sm mut" style="margin-top:18px">🔒 Cada persona solo puede ver sus propios datos. Tu progreso queda guardado en tu cuenta y lo ves en el celular y el computador.</p>
+ ${canInstall()?'<button class="btn ghost" style="margin-top:10px" onclick="installApp()">📲 Instalar FORJA en este celular</button>':''}</div>`;
  const p=$('#lg_p');if(p)p.onkeydown=e=>{if(e.key==='Enter')loginEmail()}}
 async function loginGoogle(){const {AU,auth}=FB;const pr=new AU.GoogleAuthProvider();pr.setCustomParameters({prompt:'select_account'});LG.msg='';
  try{await AU.signInWithPopup(auth,pr)}catch(e){if(['auth/popup-blocked','auth/operation-not-supported-in-this-environment'].includes(e.code)){try{await AU.signInWithRedirect(auth,pr)}catch(e2){LG.msg=authMsg(e2);renderLogin()}}else{LG.msg=authMsg(e);renderLogin()}}}
@@ -916,6 +917,46 @@ function puzDraw(){$('#gbody').innerHTML=`<p class="mut">Movimientos: <b>${GAME.
 function puzTap(i){if(!GAME||GAME.k!=='puz')return;const z=GAME.b.indexOf(0);const adj=(Math.abs(i-z)===3)||(Math.abs(i-z)===1&&Math.floor(i/3)===Math.floor(z/3));if(!adj)return;
  GAME.b[z]=GAME.b[i];GAME.b[i]=0;GAME.mv++;beep(500,30);if(GAME.b.join()==='1,2,3,4,5,6,7,8,0')gameEnd('puz',GAME.mv,(a,b)=>a<b,`¡Resuelto en ${GAME.mv} movimientos!`);else puzDraw()}
 
+/* =================== COMPARTIR E INSTALAR =================== */
+const APP_URL='https://industriasactivasas.github.io/forja/';
+let INSTALL_EVT=null;
+window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();INSTALL_EVT=e;if(TAB==='hoy'||!USER)render()});
+window.addEventListener('appinstalled',()=>{INSTALL_EVT=null;render()});
+// Instalada = abierta desde el ícono, o marcada como "Ya la tengo" en este dispositivo.
+const isInstalled=()=>matchMedia('(display-mode: standalone)').matches||navigator.standalone===true||(()=>{try{return localStorage.getItem('forja_instalada')==='1'}catch(e){return false}})();
+if(matchMedia('(display-mode: standalone)').matches||navigator.standalone===true){try{localStorage.setItem('forja_instalada','1')}catch(e){}}
+// Se puede ofrecer instalar si: Android/Chrome lanzó el aviso (no lo lanza si ya está instalada) o es iPhone (Safari no avisa nada).
+const canInstall=()=>!isInstalled()&&(!!INSTALL_EVT||isIOS());
+function markInstalled(){try{localStorage.setItem('forja_instalada','1')}catch(e){}closeL();render()}
+const isIOS=()=>/iphone|ipad|ipod/i.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
+const shareUrl=()=>APP_URL+(S&&S.code?'?amigo='+S.code:'');
+const shareMsg=()=>`🔥 Estoy entrenando con FORJA: rutinas en casa o gimnasio, menú diario, retos con amigos y rangos de Bronce a Adamantita. Es gratis 👉 ${shareUrl()}${S&&S.code?'  (mi código de amigo: '+S.code+')':''}`;
+async function shareApp(){if(navigator.share){try{await navigator.share({title:'FORJA',text:shareMsg()});return}catch(e){if(e.name==='AbortError')return}}
+ try{await navigator.clipboard.writeText(shareMsg());alert('Enlace copiado. Pégalo en WhatsApp, Instagram o donde quieras.')}catch(e){prompt('Copia este mensaje:',shareMsg())}}
+async function showQR(){$('#layer').innerHTML=`<div class="modal" onclick="if(event.target===this)closeL()"><div style="text-align:center"><div class="row sp"><h2>📱 Escanea para instalar FORJA</h2><button class="btn sm ghost" onclick="closeL()">✕</button></div>
+ <div id="qrbox" style="background:#fff;border-radius:16px;padding:14px;width:260px;height:260px;margin:14px auto;display:grid;place-items:center;color:#333">Generando…</div>
+ <p class="sm mut">Que tu amigo apunte la cámara de su celular a este código.${S&&S.code?' Quedará agregado a tu tabla de amigos.':''}</p></div></div>`;
+ try{if(!window.qrcode)await new Promise((ok,ko)=>{const s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js';s.onload=ok;s.onerror=ko;document.head.appendChild(s)});
+  const q=qrcode(0,'M');q.addData(shareUrl());q.make();const b=$('#qrbox');if(b)b.innerHTML=q.createSvgTag({cellSize:6,margin:2,scalable:true}).replace('<svg','<svg style="width:232px;height:232px"')}
+ catch(e){const b=$('#qrbox');if(b)b.textContent='No se pudo generar el QR (revisa tu internet). Usa el botón de WhatsApp.'}}
+function shareCard(){return `<div class="card" style="border-color:#35d07f55;background:linear-gradient(135deg,#35d07f1c,#171b23)"><h2>🤝 Entrena acompañado</h2>
+ <p class="sm mut">Las personas que entrenan con alguien abandonan mucho menos. Invita a un amigo, pareja o familiar${S&&S.code?' y quedarán conectados en tu tabla de amigos':''}.</p>
+ <div class="grid2" style="margin-top:10px"><a class="btn ok" style="text-decoration:none" target="_blank" rel="noopener" href="https://wa.me/?text=${encodeURIComponent(shareMsg())}">WhatsApp</a><button class="btn ghost" onclick="shareApp()">📤 Compartir</button></div>
+ <button class="btn ghost" style="margin-top:8px" onclick="showQR()">📱 Mostrar código QR</button></div>`}
+function installCard(){if(!canInstall()||(S&&S.hideInstall===today()))return '';
+ return `<div class="card" style="border-color:#4da3ff66"><div class="row"><img src="icon-192.png" alt="" width="46" height="46" style="border-radius:12px"><div style="flex:1"><b>Instala FORJA en tu celular</b><div class="sm mut">Ícono propio, pantalla completa y funciona sin internet.</div></div></div>
+ <div class="row" style="margin-top:10px"><button class="btn pri" onclick="installApp()">📲 Instalar app</button><button class="btn ghost" style="width:auto" onclick="S.hideInstall=today();save();render()">Ahora no</button></div>
+ <button class="btn ghost sm" style="margin-top:8px;width:100%" onclick="markInstalled()">Ya la tengo instalada</button></div>`}
+async function installApp(){if(INSTALL_EVT){INSTALL_EVT.prompt();try{await INSTALL_EVT.userChoice}catch(e){}INSTALL_EVT=null;render();return}
+ const ios=isIOS(),inSafari=ios&&/safari/i.test(navigator.userAgent)&&!/crios|fxios|edgios/i.test(navigator.userAgent);
+ const step=(n,t)=>`<div class="row" style="align-items:flex-start;margin:10px 0"><b style="background:var(--ac);color:#111;border-radius:50%;width:26px;height:26px;display:grid;place-items:center;flex:none">${n}</b><div>${t}</div></div>`;
+ const shareIcon='<svg width="20" height="20" viewBox="0 0 24 24" style="vertical-align:-4px"><path d="M12 3v12M7 8l5-5 5 5" stroke="#4da3ff" stroke-width="2" fill="none" stroke-linecap="round"/><rect x="4" y="11" width="16" height="10" rx="2" stroke="#4da3ff" stroke-width="2" fill="none"/></svg>';
+ const body=ios?(inSafari?step(1,`Toca el botón <b>Compartir</b> ${shareIcon} en la barra de Safari (abajo en iPhone, arriba en iPad).`)+step(2,'Baja y toca <b>"Agregar a pantalla de inicio"</b> ➕.')+step(3,'Toca <b>"Agregar"</b>. ¡Listo! Abre FORJA desde el ícono de la llama 🔥.')
+   :step(1,'En iPhone la instalación solo funciona desde <b>Safari</b>.')+step(2,`Copia este enlace y ábrelo en Safari:<br><b style="word-break:break-all">${APP_URL}</b>`)+step(3,`Luego: Compartir ${shareIcon} → <b>"Agregar a pantalla de inicio"</b>.`)+`<button class="btn ghost" onclick="navigator.clipboard&&navigator.clipboard.writeText('${APP_URL}').then(()=>alert('Enlace copiado'))">Copiar enlace</button>`)
+  :step(1,'Abre el menú del navegador <b>⋮</b> (arriba a la derecha en Chrome).')+step(2,'Toca <b>"Instalar app"</b> o <b>"Agregar a pantalla principal"</b>.')+step(3,'Confirma con <b>"Instalar"</b>. ¡Listo! Abre FORJA desde el ícono de la llama 🔥.');
+ $('#layer').innerHTML=`<div class="modal" onclick="if(event.target===this)closeL()"><div><div class="row sp"><h2>📲 Instalar FORJA</h2><button class="btn sm ghost" onclick="closeL()">✕</button></div>${body}<p class="sm mut" style="margin-top:10px">No ocupa casi espacio y se actualiza sola.</p>
+ <button class="btn ghost sm" style="margin-top:8px;width:100%" onclick="markInstalled()">Ya la tengo instalada</button></div></div>`}
+
 /* =================== VOZ Y SONIDO =================== */
 let AC=null;
 function beep(f=880,ms=150){try{AC=AC||new (window.AudioContext||window.webkitAudioContext)();const o=AC.createOscillator(),g=AC.createGain();o.frequency.value=f;o.connect(g);g.connect(AC.destination);g.gain.setValueAtTime(.25,AC.currentTime);g.gain.exponentialRampToValueAtTime(.001,AC.currentTime+ms/1000);o.start();o.stop(AC.currentTime+ms/1000)}catch(e){}}
@@ -1004,6 +1045,7 @@ V.hoy=()=>{
   ${(()=>{const c=ctxQuote(QOFF);return poster(c.q,c.tag+' · toca para otra',pick(SCN,info.idx+QOFF),'nextQuote()')})()}
   ${OFFLINE?'<div class="banner bad">📴 Sin conexión: tus cambios se guardan en este dispositivo. Conéctate y vuelve a abrir FORJA para iniciar sesión.</div>':''}
   ${accountCard()}
+  ${installCard()}
   ${notifCard()}
   ${rankCard()}
   ${futureCard()}
@@ -1020,6 +1062,7 @@ V.hoy=()=>{
   <div class="card"><h2>¿Cómo te sientes hoy?</h2><div class="row moods">${['😫','😕','😐','🙂','💪'].map((e,i)=>`<button class="${d.mood===i+1?'on':''}" onclick="setMood(${i+1})">${e}</button>`).join('')}</div>
   ${d.mood&&d.mood<=2?'<p class="sm" style="margin-top:8px">Los días malos son los que más cuentan. No necesitas ganas, necesitas empezar: 2 minutos y decide después. Prueba la respiración en 🧠 Mente.</p>':''}</div>
   <div class="card"><h2>Esta semana</h2>${weekStrip()}</div>
+  ${shareCard()}
   <p class="sm mut" style="text-align:center"><a href="#" onclick="settings();return false" style="color:var(--mut)">⚙️ Ajustes, recordatorio diario y copia de seguridad</a></p>`;
 };
 const LVLN=()=>'Nivel '+['Principiante','Intermedio','Avanzado'][S.lvl];
@@ -1225,6 +1268,8 @@ function settings(){$('#layer').innerHTML=`<div class="modal" onclick="if(event.
  <label>Intensidad automática: ${Math.round((S.adj||1)*100)}%</label>
  <label class="row" style="color:var(--tx)"><input type="checkbox" id="s_voz" style="width:auto" ${S.voz!==false?'checked':''}> Guía por voz</label>
  <button class="btn ok" style="margin-top:10px" onclick="saveSettings()">Guardar ajustes</button>
+ <h3>🤝 Compartir FORJA</h3><div class="grid2"><button class="btn ghost" onclick="shareApp()">📤 Compartir</button><button class="btn ghost" onclick="showQR()">📱 Código QR</button></div>
+ ${canInstall()?'<button class="btn ghost" style="margin-top:8px" onclick="installApp()">📲 Instalar app en este dispositivo</button>':''}
  <h3>👤 Mi cuenta</h3>
  ${USER?`<p class="sm">Conectado como <b>${esc(USER.email||'')}</b> <span class="pill ok">${USER.providerData.some(p=>p.providerId==='google.com')?'Google':'Correo'}</span></p><p class="sm mut">La sesión queda abierta en este dispositivo. Tu progreso se guarda en tu cuenta y lo ves en todos tus dispositivos.</p>
   <div class="row" style="margin-top:8px">${USER.providerData.some(p=>p.providerId==='password')?'<button class="btn ghost" onclick="resetPwFromSettings()">Cambiar contraseña</button>':''}<button class="btn ghost" onclick="logout()">Cerrar sesión</button></div>`
