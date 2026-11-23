@@ -85,7 +85,7 @@ let S=null;
 // Esta configuración es pública por diseño (identifica el proyecto, no da acceso a datos).
 const FB_VER='10.12.2',FB_CFG={apiKey:'AIzaSyB81akjrxLj262u1WrWy1_qd_Qba10OmoU',authDomain:'forja-ecb92.firebaseapp.com',projectId:'forja-ecb92',storageBucket:'forja-ecb92.firebasestorage.app',messagingSenderId:'467101732270',appId:'1:467101732270:web:038ec8f0912f048c078c3f'};
 let FB=null,USER=null,AUTHREADY=false,OFFLINE=false,CLOUDT=0,SYNCED={},LG={mode:'entrar',msg:'',ok:''};
-function save(){if(USER&&FB){clearTimeout(CLOUDT);CLOUDT=setTimeout(cloudSave,800)}else if(S)localStorage.setItem(KEY,JSON.stringify(S));try{if(S&&S.p)swState()}catch(e){}}
+function save(){if(USER&&FB){clearTimeout(CLOUDT);CLOUDT=setTimeout(cloudSave,800);pubSoon()}else if(S)localStorage.setItem(KEY,JSON.stringify(S));try{if(S&&S.p)swState()}catch(e){}}
 async function fbInit(){if(FB)return FB;const u=m=>`https://www.gstatic.com/firebasejs/${FB_VER}/firebase-${m}.js`;
  const [A,AU,FS]=await Promise.all([import(u('app')),import(u('auth')),import(u('firestore'))]);
  const app=A.initializeApp(FB_CFG);const auth=AU.getAuth(app);auth.languageCode='es';await AU.setPersistence(auth,AU.browserLocalPersistence);
@@ -106,7 +106,7 @@ async function loadCloud(){const {FS,db}=FB;const ref=FS.doc(db,'users',USER.uid
   if(!S){OB=OB0();const nm=USER.displayName||LG.name;if(nm)OB.p.nombre=nm.split(' ')[0]}}}
 async function startAuth(){
  try{const {AU,auth}=await fbInit();
-  AU.onAuthStateChanged(auth,async u=>{USER=u;SYNCED={};if(u){S=null;await loadCloud()}else S=null;AUTHREADY=true;render();if(S){try{swState()}catch(e){}armTimer()}});
+  AU.onAuthStateChanged(auth,async u=>{USER=u;SYNCED={};SOC.t=0;if(u){S=null;await loadCloud()}else S=null;AUTHREADY=true;render();if(S){try{swState()}catch(e){}armTimer();pubSoon();handleInvite()}});
   AU.getRedirectResult(auth).catch(e=>{LG.msg=authMsg(e);render()})}
  catch(e){// sin internet la primera vez: modo local
   console.error(e);OFFLINE=true;AUTHREADY=true;try{S=JSON.parse(localStorage.getItem(KEY))}catch(_){S=null}render();if(S)armTimer()}}
@@ -145,7 +145,7 @@ async function logout(){if(CLOUDT){clearTimeout(CLOUDT);await cloudSave()}try{st
  try{(await caches.open('forja-state')).delete('./state.json')}catch(e){}location.reload()}
 async function deleteAccount(){if(!confirm('Se borrarán tu cuenta y TODOS tus datos (en la nube y en este dispositivo). No se puede deshacer. ¿Continuar?'))return;
  const {FS,db}=FB;const uid=USER.uid;
- try{await USER.getIdToken(true);for(const d of Object.keys(SYNCED))await FS.deleteDoc(FS.doc(db,'users',uid,'photos',d));await FS.deleteDoc(FS.doc(db,'users',uid));await USER.delete()}
+ try{await USER.getIdToken(true);clearTimeout(PUBT);await FS.deleteDoc(FS.doc(db,'profiles',uid)).catch(()=>{});if(S&&S.code)await FS.deleteDoc(FS.doc(db,'codes',S.code)).catch(()=>{});for(const d of Object.keys(SYNCED))await FS.deleteDoc(FS.doc(db,'users',uid,'photos',d));await FS.deleteDoc(FS.doc(db,'users',uid));await USER.delete()}
  catch(e){alert(authMsg(e));return}
  try{await FS.terminate(db);await FS.clearIndexedDbPersistence(db)}catch(e){}localStorage.removeItem(KEY);location.reload()}
 async function resetPwFromSettings(){try{await FB.AU.sendPasswordResetEmail(FB.auth,USER.email);alert('Te enviamos un correo a '+USER.email+' para cambiar tu contraseña.')}catch(e){alert(authMsg(e))}}
@@ -415,7 +415,7 @@ function habits(){const A=S.A;return [
  ['prot',`Comer ${A.prot} g de proteína (proteína en cada comida)`],
  ['verdura','Verduras en almuerzo y cena (½ plato)'],
  ['azucar','Cero bebidas azucaradas y cero alcohol'],
- ['respira','Respiración consciente 5 min','mente'],
+ ['respira','Reto mental del día (acertijo, juego o reto de mentalidad)','mente'],
  ['diario','Diario: 3 líneas','mente'],
  ['sueno','Dormir 7–9 h (pantallas fuera 1 h antes)'],
  ...(S.p.sexo==='m'?[['pelvico','Suelo pélvico: 3×10 contracciones de 5 s (Kegel)']]:[])]}
@@ -433,19 +433,19 @@ const RANKS=[
  {n:'Adamantita',xp:28000,c1:'#ff4d8d',c2:'#12001f',s:'Indestructible. La cima de FORJA.'}];
 const XPV={w:100,min:40,habit:10,full:30,log:30,test:100,miss:-60};
 function xpInfo(){
- let xp=0,c=0,todayXp=0;const H=habits().map(h=>h[0]);
+ let xp=0,c=0,todayXp=0;const H=habits().map(h=>h[0]);const byDay={};
  for(let k=S.start;diffDays(k,today())>=0;k=addDays(k,1)){
   const d=S.days&&S.days[k];let g=0;
   if(d){g+=d.w?XPV.w:d.min?XPV.min:0;const hd=H.filter(h=>d.h[h]).length;g+=hd*XPV.habit;if((d.w||d.min)&&hd===H.length)g+=XPV.full}
   if(done(k)){c++;g+=Math.min(c,30)*2}else{c=0;if(k!==today())g+=XPV.miss}
-  xp=Math.max(0,xp+g);if(k===today())todayXp=g;
+  xp=Math.max(0,xp+g);if(k===today())todayXp=g;byDay[k]=[done(k)?1:0,Math.round(g)];
  }
  xp+=Math.max(0,(S.logs||[]).length-1)*XPV.log+Math.max(0,(S.tests||[]).length-1)*XPV.test;
  let r=0;for(let i=0;i<RANKS.length;i++)if(xp>=RANKS[i].xp)r=i;
  const lo=RANKS[r].xp,hi=r<RANKS.length-1?RANKS[r+1].xp:null;
  let div=null,next=hi,prog=1;
  if(hi!==null){const step=(hi-lo)/3;const di=Math.min(2,Math.floor((xp-lo)/step));div=['III','II','I'][di];next=Math.round(lo+step*(di+1));const base=lo+step*di;prog=(xp-base)/(next-base)}
- return {xp,r,div,next,prog,todayXp,key:r*3+(div?['III','II','I'].indexOf(div):0)};
+ return {xp,r,div,next,prog,todayXp,byDay,key:r*3+(div?['III','II','I'].indexOf(div):0)};
 }
 const rankName=x=>RANKS[x.r].n+(x.div?' '+x.div:'');
 let BID=0;
@@ -462,7 +462,7 @@ function badge(ri,size=90,div=null,locked=false){
  ${ada}${wings}<path d="${shield}" fill="url(#${id})" stroke="${R.c2}" stroke-width="3"/><path d="M50 14 L82 26 L79 60 Q76 82 50 96 Q24 82 21 60 L18 26 Z" fill="none" stroke="#ffffff55" stroke-width="2"/>
  ${crown}<path d="${sym}" fill="${ri===7?'url(#'+id+'r)':'#ffffffcc'}" stroke="${R.c2}" stroke-width="2" stroke-linejoin="round"/>
  ${div?`<text x="50" y="100" text-anchor="middle" font-size="14" font-weight="900" fill="#fff" stroke="${R.c2}" stroke-width="3" paint-order="stroke">${div}</text>`:''}</svg>`}
-function rankCard(){const x=xpInfo(),R=RANKS[x.r];return `<div class="card" style="cursor:pointer;background:linear-gradient(135deg,${R.c2}55,#171b23)" onclick="go('rangos')"><div class="row">${badge(x.r,84,x.div)}<div style="flex:1">
+function rankCard(){const x=xpInfo(),R=RANKS[x.r];return `<div class="card" style="cursor:pointer;background:linear-gradient(135deg,${R.c2}55,#171b23)" onclick="go('retos')"><div class="row">${badge(x.r,84,x.div)}<div style="flex:1">
  <p class="sm mut">TU RANGO</p><h2 style="margin:0">${rankName(x)}</h2><p class="sm">${x.xp.toLocaleString('es')} XP ${x.todayXp?`· <b style="color:${x.todayXp>0?'var(--ok)':'var(--bad)'}">${x.todayXp>0?'+':''}${x.todayXp} hoy</b>`:''}</p>
  <div class="bar" style="margin-top:6px"><i style="width:${Math.round(x.prog*100)}%;background:${R.c1}"></i></div>
  <p class="sm mut" style="margin-top:4px">${x.next?`Faltan ${(x.next-x.xp).toLocaleString('es')} XP para ${x.div==='I'?RANKS[x.r+1].n+' III':R.n+' '+(x.div==='III'?'II':'I')}`:'Rango máximo alcanzado 👑'}</p></div></div></div>`}
@@ -688,6 +688,234 @@ function setDiet(x){S.p.dieta=x;save();render()}
 function shopList(){const tot={};for(let i=0;i<7;i++){const k=addDays(today(),i);for(const s of ['B','L','M','C'])for(const [id,q] of mealFor(s,k).items)tot[id]=(tot[id]||0)+q}
  return `<ul class="sm" style="padding-left:18px;margin-top:8px">${Object.entries(tot).filter(([id])=>id!=='cafe').sort((a,b)=>FOOD[a[0]].n.localeCompare(FOOD[b[0]].n)).map(([id,q])=>`<li>${fq(id,q)}</li>`).join('')}</ul><p class="sm mut">Cantidades aproximadas en cocido; compra un poco más de verduras y fruta.</p>`}
 
+/* =================== RETOS CON AMIGOS Y TABLAS DE RANGOS =================== */
+// Solo se comparte un perfil público mínimo (profiles/{uid}): nombre visible, rango, XP, racha y días cumplidos.
+// Nunca medidas, peso, fotos, comida ni diario. La tabla global es opcional (publico=false por defecto).
+let PUBT=0,SOC={t:0,friends:[],global:[],chal:[],prof:{},busy:false,err:'',gErr:'',sort:'xp',msg:'',okmsg:''};
+const CODEA='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+const rcode=n=>Array.from(crypto.getRandomValues(new Uint8Array(n)),b=>CODEA[b%CODEA.length]).join('');
+const alias=()=>String((S&&(S.alias||S.p.nombre))||'Atleta').replace(/[<>"'`]/g,'').trim().slice(0,24)||'Atleta';
+(()=>{const q=new URLSearchParams(location.search);const r=q.get('reto'),a=q.get('amigo');if(r||a){try{sessionStorage.setItem('forja_inv',JSON.stringify({reto:r,amigo:a}))}catch(e){}history.replaceState(null,'',location.pathname)}})();
+function pubSoon(){if(!USER||!FB||!S||!S.p)return;clearTimeout(PUBT);PUBT=setTimeout(publishProfile,1500)}
+async function ensureCode(){if(S.code)return S.code;const {FS,db}=FB;
+ for(let i=0;i<6;i++){const c=rcode(6);try{await FS.setDoc(FS.doc(db,'codes',c),{uid:USER.uid});S.code=c;save();return c}catch(e){}}return ''}
+async function publishProfile(){if(!USER||!FB||!S||!S.p)return;const {FS,db}=FB;const x=xpInfo();const cut=addDays(today(),-59);const dias={};
+ for(const k in x.byDay)if(k>=cut)dias[k]=x.byDay[k];let sem=0;for(let i=0;i<7;i++)if(done(addDays(today(),-i)))sem++;
+ const code=await ensureCode();
+ try{await FS.setDoc(FS.doc(db,'profiles',USER.uid),{name:alias(),xp:Math.round(x.xp),r:x.r,div:x.div||'',racha:streak(),mejor:bestStreak(),sem,dias,code,publico:!!S.publico,updated:FS.serverTimestamp()})}
+ catch(e){console.error('FORJA: perfil público',e)}}
+async function socLoad(force){if(!USER||!FB||!S)return;if(SOC.busy||(!force&&Date.now()-SOC.t<60e3))return;SOC.busy=true;const {FS,db}=FB;
+ try{await publishProfile();const getP=id=>FS.getDoc(FS.doc(db,'profiles',id)).then(s=>s.exists()?{uid:id,...s.data()}:null).catch(()=>null);
+  const ids=[...new Set([USER.uid,...(S.friends||[])])];const prof={};(await Promise.all(ids.map(getP))).forEach(p=>{if(p)prof[p.uid]=p});
+  SOC.friends=ids.map(i=>prof[i]).filter(Boolean);
+  try{SOC.global=(await FS.getDocs(FS.query(FS.collection(db,'profiles'),FS.where('publico','==',true),FS.orderBy('xp','desc'),FS.limit(50)))).docs.map(d=>({uid:d.id,...d.data()}));SOC.gErr=''}
+  catch(e){SOC.global=[];SOC.gErr=e.code==='failed-precondition'?'La tabla global se está preparando. Vuelve en unos minutos.':'No se pudo cargar la tabla global.';console.warn(e)}
+  SOC.chal=(await FS.getDocs(FS.query(FS.collection(db,'challenges'),FS.where('members','array-contains',USER.uid)))).docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>a.end<b.end?1:-1);
+  const need=new Set();SOC.chal.forEach(c=>c.members.forEach(m=>{if(!prof[m])need.add(m)}));(await Promise.all([...need].map(getP))).forEach(p=>{if(p)prof[p.uid]=p});
+  SOC.prof=prof;SOC.t=Date.now();SOC.err=''}
+ catch(e){SOC.err='No se pudo cargar: '+(e.code||e.message);console.error(e)}
+ SOC.busy=false;if(TAB==='retos')render()}
+function socMsg(m,ok){SOC.msg=ok?'':m;SOC.okmsg=ok?m:'';render()}
+async function addFriend(code){code=String(code||'').toUpperCase().replace(/[^A-Z0-9]/g,'');if(code.length!==6){socMsg('El código de amigo tiene 6 caracteres.');return}
+ const {FS,db}=FB;try{const s=await FS.getDoc(FS.doc(db,'codes',code));if(!s.exists()){socMsg('No existe ese código.');return}const uid=s.data().uid;
+  if(uid===USER.uid){socMsg('Ese es tu propio código 😄');return}S.friends=S.friends||[];if(S.friends.includes(uid)){socMsg('Ya es tu amigo.',1);return}
+  if(S.friends.length>=50){socMsg('Máximo 50 amigos.');return}S.friends.push(uid);save();SOC.t=0;socMsg('¡Amigo agregado! 💪',1);socLoad(true)}catch(e){socMsg('No se pudo agregar: '+(e.code||e.message))}}
+function removeFriend(uid){if(!confirm('¿Quitar a esta persona de tu tabla de amigos?'))return;S.friends=(S.friends||[]).filter(x=>x!==uid);save();SOC.friends=SOC.friends.filter(p=>p.uid!==uid);render()}
+const CTYPE={dias:'Días cumplidos',xp:'XP ganada',racha:'Racha más larga'};
+async function createChallenge(){const name=($('#rc_n').value||'').replace(/[<>"'`]/g,'').trim().slice(0,40),type=$('#rc_t').value,dur=+$('#rc_d').value;
+ if(!name){socMsg('Ponle un nombre al reto.');return}const {FS,db}=FB;const id=rcode(8);
+ try{await FS.setDoc(FS.doc(db,'challenges',id),{name,type,start:today(),end:addDays(today(),dur-1),owner:USER.uid,members:[USER.uid],created:FS.serverTimestamp()});SOC.t=0;await socLoad(true);socMsg('Reto creado. ¡Compártelo con tus amigos!',1);shareInvite('reto',id,name)}
+ catch(e){socMsg('No se pudo crear: '+(e.code||e.message))}}
+async function joinChallenge(code,silent){code=String(code||'').toUpperCase().replace(/[^A-Z0-9]/g,'');if(code.length!==8){socMsg('El código del reto tiene 8 caracteres.');return}
+ const {FS,db}=FB;try{const ref=FS.doc(db,'challenges',code);const s=await FS.getDoc(ref);if(!s.exists()){socMsg('No existe ese reto.');return}const c=s.data();
+  if(c.members.includes(USER.uid)){socMsg('Ya estás en "'+c.name+'".',1);return}if(c.end<today()){socMsg('Ese reto ya terminó.');return}if(c.members.length>=50){socMsg('El reto está lleno (50).');return}
+  if(!silent&&!confirm(`¿Unirte al reto "${c.name}" (${CTYPE[c.type]||c.type}, hasta ${c.end})?`))return;
+  await FS.updateDoc(ref,{members:FS.arrayUnion(USER.uid)});SOC.t=0;await socLoad(true);socMsg('¡Te uniste a "'+c.name+'"! 🔥',1)}catch(e){socMsg('No se pudo unir: '+(e.code||e.message))}}
+async function leaveChallenge(id){const c=SOC.chal.find(x=>x.id===id);if(!c)return;const {FS,db}=FB;
+ try{if(c.owner===USER.uid&&c.members.length===1){if(!confirm('¿Borrar este reto?'))return;await FS.deleteDoc(FS.doc(db,'challenges',id))}
+  else{if(!confirm('¿Salir del reto "'+c.name+'"?'))return;await FS.updateDoc(FS.doc(db,'challenges',id),{members:FS.arrayRemove(USER.uid)})}
+  SOC.chal=SOC.chal.filter(x=>x.id!==id);render()}catch(e){socMsg('No se pudo: '+(e.code||e.message))}}
+function chScore(c,p){if(!p)return 0;if(c.type==='racha')return p.racha||0;let t=0;const end=c.end<today()?c.end:today();
+ for(const k in (p.dias||{}))if(k>=c.start&&k<=end){const v=p.dias[k];t+=c.type==='xp'?Math.max(0,v[1]||0):(v[0]||0)}return t}
+async function shareInvite(kind,code,name){const url=location.origin+location.pathname+'?'+kind+'='+code;
+ const msg=kind==='reto'?`🔥 Te reto en FORJA: "${name}". Únete aquí: ${url}  (código ${code})`:`💪 Entrena conmigo en FORJA y compite en mi tabla de rangos: ${url}  (mi código: ${code})`;
+ if(navigator.share){try{await navigator.share({title:'FORJA',text:msg});return}catch(e){if(e.name==='AbortError')return}}
+ try{await navigator.clipboard.writeText(msg);socMsg('Invitación copiada. Pégala en WhatsApp o donde quieras.',1)}catch(e){prompt('Copia esta invitación:',msg)}}
+function waLink(kind,code,name){const url=location.origin+location.pathname+'?'+kind+'='+code;return 'https://wa.me/?text='+encodeURIComponent(kind==='reto'?`🔥 Te reto en FORJA: "${name}". Únete aquí: ${url}`:`💪 Entrena conmigo en FORJA: ${url} (mi código: ${code})`)}
+async function handleInvite(){let inv=null;try{inv=JSON.parse(sessionStorage.getItem('forja_inv'))}catch(e){}if(!inv||!USER||!S)return;sessionStorage.removeItem('forja_inv');
+ TAB='retos';if(inv.amigo){if(confirm('¿Agregar a la persona que te invitó a tu tabla de amigos?'))await addFriend(inv.amigo)}if(inv.reto)await joinChallenge(inv.reto);render()}
+function setAlias(){const v=($('#al_n').value||'').replace(/[<>"'`]/g,'').trim().slice(0,24);if(!v)return;S.alias=v;save();socMsg('Nombre visible actualizado.',1);setTimeout(()=>socLoad(true),1700)}
+function setPublic(on){S.publico=!!on;save();SOC.t=0;setTimeout(()=>socLoad(true),1700);render()}
+function lbRows(list,val,unit){if(!list.length)return '<p class="sm mut">Todavía no hay nadie aquí.</p>';
+ return list.map((p,i)=>{const me=p.uid===USER.uid;const v=val(p);return `<div class="exl" style="${me?'background:#ff7a1a1f;border-radius:12px;padding:8px':''}">
+  <b style="width:26px;text-align:center;font-size:${i<3?20:15}px">${['🥇','🥈','🥉'][i]||i+1}</b>${badge(Math.min(7,Math.max(0,+p.r||0)),38,p.div||null)}
+  <div style="flex:1;min-width:0"><b>${esc(p.name||'Atleta')}${me?' (tú)':''}</b><div class="sm mut">${RANKS[Math.min(7,Math.max(0,+p.r||0))].n}${p.div?' '+esc(p.div):''} · 🔥 ${+p.racha||0} días</div></div>
+  <b>${v.toLocaleString('es')} <span class="sm mut">${unit}</span></b></div>`}).join('')}
+const V_RETOS=()=>{if(!USER)return '<h1>🏆 Retos</h1><div class="card"><p>Necesitas iniciar sesión (con internet) para competir con amigos.</p></div>';
+ socLoad();const so={xp:[p=>+p.xp||0,'XP'],racha:[p=>+p.racha||0,'días'],sem:[p=>+p.sem||0,'/7 días']}[SOC.sort];
+ const fr=[...SOC.friends].sort((a,b)=>so[0](b)-so[0](a));
+ return `<h1>🏆 Retos y rangos</h1><p class="mut sm">Compite con tus amigos. Nadie ve tus medidas, peso, fotos ni diario: solo tu nombre visible, rango, XP, racha y días cumplidos.</p>
+ ${SOC.msg?`<div class="banner bad">${esc(SOC.msg)}</div>`:''}${SOC.okmsg?`<div class="banner ok">${esc(SOC.okmsg)}</div>`:''}${SOC.err?`<div class="banner bad">${esc(SOC.err)}</div>`:''}
+ ${rankCard()}
+ <div class="card"><h2>👥 Tus amigos</h2>
+  <div class="row sp wr"><div><span class="sm mut">Tu código de amigo</span><div style="font-size:26px;font-weight:900;letter-spacing:4px">${esc(S.code||'······')}</div></div>
+  ${S.code?`<div class="row"><button class="btn sm pri" onclick="shareInvite('amigo','${S.code}')">Invitar</button><a class="btn sm ghost" style="text-decoration:none" target="_blank" rel="noopener" href="${waLink('amigo',S.code)}">WhatsApp</a></div>`:''}</div>
+  <div class="row" style="margin-top:10px"><input id="fr_c" placeholder="Código de tu amigo" maxlength="6" style="text-transform:uppercase"><button class="btn sm pri" onclick="addFriend($('#fr_c').value)">Agregar</button></div></div>
+ <div class="card"><div class="row sp"><h2>📊 Tabla de amigos</h2><button class="btn sm ghost" onclick="SOC.t=0;socLoad(true)">${SOC.busy?'…':'↻'}</button></div>
+  <div class="row" style="margin-bottom:8px">${[['xp','XP total'],['racha','Racha'],['sem','Esta semana']].map(([k,t])=>`<button class="btn sm ${SOC.sort===k?'pri':'ghost'}" style="flex:1" onclick="SOC.sort='${k}';render()">${t}</button>`).join('')}</div>
+  ${SOC.t?lbRows(fr,so[0],so[1]):'<p class="sm mut">Cargando…</p>'}
+  ${fr.length>1?`<details style="margin-top:8px"><summary class="sm mut">Quitar amigos</summary>${fr.filter(p=>p.uid!==USER.uid).map(p=>`<div class="row sp" style="margin-top:6px"><span class="sm">${esc(p.name)}</span><button class="btn sm ghost" onclick="removeFriend('${p.uid}')">Quitar</button></div>`).join('')}</details>`:''}
+  ${fr.length<=1&&SOC.t?'<p class="sm mut" style="margin-top:8px">Invita a tus amigos con tu código: entrenar acompañado duplica las ganas de no fallar.</p>':''}</div>
+ <div class="card"><h2>🔥 Retos</h2>
+  ${SOC.chal.map(c=>{const ended=c.end<today();const left=diffDays(today(),c.end);const rows=c.members.map(m=>SOC.prof[m]).filter(Boolean).map(p=>({...p,sc:chScore(c,p)})).sort((a,b)=>b.sc-a.sc);
+   const unit={dias:'días',xp:'XP',racha:'días'}[c.type]||'';
+   return `<div style="border:1px solid var(--line);border-radius:14px;padding:12px;margin:10px 0"><div class="row sp"><b>${esc(c.name)}</b><span class="pill ${ended?'':'ac'}">${ended?'Terminado':left===0?'Último día':`Quedan ${left+1} días`}</span></div>
+    <p class="sm mut">${CTYPE[c.type]||''} · ${c.start} → ${c.end} · ${c.members.length} participante${c.members.length===1?'':'s'} · código <b>${c.id}</b></p>
+    ${ended&&rows[0]?`<div class="banner ok">🏆 Ganador: ${esc(rows[0].name)} con ${rows[0].sc} ${unit}</div>`:''}
+    ${lbRows(rows,p=>p.sc,unit)}
+    <div class="row wr" style="margin-top:8px">${!ended?`<button class="btn sm pri" onclick="shareInvite('reto','${c.id}',${esc(JSON.stringify(c.name))})">Invitar</button><a class="btn sm ghost" style="text-decoration:none" target="_blank" rel="noopener" href="${waLink('reto',c.id,c.name)}">WhatsApp</a>`:''}<button class="btn sm ghost" onclick="leaveChallenge('${c.id}')">${c.owner===USER.uid&&c.members.length===1?'Borrar':'Salir'}</button></div></div>`}).join('')||(SOC.t?'<p class="sm mut">Aún no tienes retos. Crea uno y reta a tus amigos.</p>':'')}
+  <h3>Crear un reto</h3><input id="rc_n" maxlength="40" placeholder="Ej: Semana sin fallar 💪">
+  <div class="grid2" style="margin-top:8px"><select id="rc_t">${Object.entries(CTYPE).map(([k,v])=>`<option value="${k}">${v}</option>`).join('')}</select><select id="rc_d"><option value="7">7 días</option><option value="14">14 días</option><option value="30">30 días</option></select></div>
+  <button class="btn pri" style="margin-top:8px" onclick="createChallenge()">Crear reto</button>
+  <h3>Unirme con un código</h3><div class="row"><input id="rj_c" maxlength="8" placeholder="Código del reto" style="text-transform:uppercase"><button class="btn sm pri" onclick="joinChallenge($('#rj_c').value)">Unirme</button></div></div>
+ <div class="card"><h2>🌎 Tabla global</h2>
+  <label class="row" style="color:var(--tx);margin-top:0"><input type="checkbox" style="width:auto" ${S.publico?'checked':''} onchange="setPublic(this.checked)"> Aparecer en la tabla global (top 50 de FORJA)</label>
+  ${SOC.gErr?`<p class="sm mut">${esc(SOC.gErr)}</p>`:SOC.t?lbRows(SOC.global,p=>+p.xp||0,'XP'):''}</div>
+ <div class="card"><h2>⚙️ Tu nombre visible</h2><div class="row"><input id="al_n" maxlength="24" value="${esc(alias())}"><button class="btn sm pri" onclick="setAlias()">Guardar</button></div>
+  <p class="sm mut" style="margin-top:6px">Es lo único que ven los demás de ti, junto con tu rango y tu constancia. Puedes usar un apodo.</p>
+  <button class="btn ghost" style="margin-top:10px" onclick="go('rangos')">Ver todos los rangos y cómo ganar XP</button></div>`};
+
+/* =================== GIMNASIO MENTAL: RETOS DE MENTALIDAD, ACERTIJOS Y JUEGOS =================== */
+const MINDSET=[
+ ['Haz primero lo que más estás evitando','Antes del mediodía, termina la tarea que llevas días aplazando. Ganar contra la pereza temprano te da impulso todo el día.'],
+ ['Cero quejas hoy','Cada vez que vayas a quejarte, cámbialo por "¿qué puedo hacer yo?". Cuenta cuántas veces te atrapaste.'],
+ ['Ducha fría de 30 segundos','Al final de tu ducha, 30 s de agua fría. Entrenas a tu mente a hacer lo incómodo a propósito.'],
+ ['Una hora sin celular','Escoge una hora y deja el celular en otro cuarto. Nota cuántas veces quisiste revisarlo.'],
+ ['Habla con un desconocido','Saluda o haz una pregunta a alguien que no conoces. La confianza se entrena igual que un músculo.'],
+ ['Lo que controlas y lo que no','Escribe 3 cosas que te preocupan. Al lado de cada una: ¿depende de mí? Actúa solo sobre las que sí.'],
+ ['Cumple una promesa pequeña','Promételo a ti mismo y cúmplelo hoy (ej. 20 flexiones a las 3 p. m.). La autoestima es confiar en tu palabra.'],
+ ['Come sin pantallas','Una comida completa sin celular ni TV. Mastica lento y nota cuándo estás lleno.'],
+ ['10 minutos de aburrimiento','Siéntate 10 min sin hacer nada. El cerebro que tolera el aburrimiento se enfoca mejor.'],
+ ['Di que no a algo','Rechaza algo que no te suma (un antojo, un plan, una distracción). Decir no es decirte sí.'],
+ ['Reencuadra un problema','Toma algo que salió mal esta semana y escribe qué te enseñó. Convertir errores en datos es mentalidad de campeón.'],
+ ['Agradece a alguien en serio','Envía un mensaje concreto a alguien que te ayudó: qué hizo y cómo te cambió.'],
+ ['Termina lo que empiezas','Hoy no dejes nada a medias: cama tendida, plato lavado, serie completa.'],
+ ['Visualiza tu yo futuro','Cierra los ojos 3 min y visualiza con detalle cómo te ves, te sientes y vives en 6 meses si no fallas.'],
+ ['Levántate a la primera alarma','Sin "5 minutos más". El primer reto del día es contra ti mismo.'],
+ ['Aprende algo en 15 minutos','Lee, mira o practica algo nuevo 15 min. Un cerebro que aprende se mantiene joven.'],
+ ['Postura de ganador','Camina todo el día con hombros atrás y mirada al frente. El cuerpo también le habla a la mente.'],
+ ['Una hora de trabajo profundo','60 min en una sola tarea importante, sin notificaciones. Mide cuánto avanzas.'],
+ ['Haz una cosa que te dé miedo','Pequeña pero real: pedir algo, hablar en una reunión, intentar un ejercicio nuevo.'],
+ ['Revisa tu día en 3 líneas','Esta noche: qué hice bien, qué haré mejor, qué aprendí. Sin juzgarte, solo datos.']];
+const RIDDLES=[
+ ['Cuanto más le quitas, más grande se hace. ¿Qué es?',['hoyo','agujero','hueco'],'Piensa en la tierra.'],
+ ['Tengo llaves pero no abro puertas; tengo espacio pero no soy una casa. ¿Qué soy?',['teclado'],'Lo usas para escribir.'],
+ ['Si me nombras, desaparezco. ¿Qué soy?',['silencio'],'Shhh…'],
+ ['¿Qué pesa más: un kilo de plumas o un kilo de hierro?',['igual','ninguno','lo mismo','pesan igual','ambos'],'Lee la pregunta con calma.'],
+ ['Tengo agujas pero no coso, tengo números pero no soy teléfono. ¿Qué soy?',['reloj'],'Mide algo que no se detiene.'],
+ ['¿Qué se rompe sin que nadie lo toque?',['promesa','silencio','corazon'],'Se da con palabras.'],
+ ['Si 5 máquinas hacen 5 piezas en 5 minutos, ¿cuántos minutos tardan 100 máquinas en hacer 100 piezas?',['5','cinco'],'¿Cuánto tarda UNA máquina en hacer UNA pieza?'],
+ ['Un bate y una pelota cuestan $1.100. El bate cuesta $1.000 más que la pelota. ¿Cuánto cuesta la pelota?',['50','cincuenta'],'No es 100. Plantea: pelota + (pelota + 1000) = 1100.'],
+ ['Una mancha de lirios duplica su tamaño cada día. Si tarda 48 días en cubrir el lago, ¿en cuántos días cubre la mitad?',['47','cuarenta y siete'],'Si se duplica cada día… ¿qué pasó el día anterior?'],
+ ['El padre de María tiene 5 hijas: Lala, Lele, Lili y Lolo. ¿Cómo se llama la quinta?',['maria'],'Vuelve a leer el comienzo.'],
+ ['¿Cuántos meses del año tienen 28 días?',['12','doce','todos'],'Febrero no es el único que los tiene.'],
+ ['En una carrera adelantas al que va de segundo. ¿En qué posición quedas?',['2','segundo','segunda','de segundo'],'Ocupas su lugar.'],
+ ['Tengo ciudades pero no casas, bosques pero no árboles y agua pero no peces. ¿Qué soy?',['mapa'],'Lo usas para orientarte.'],
+ ['¿Qué número sigue? 2, 6, 12, 20, 30, …',['42','cuarenta y dos'],'Mira las diferencias: 4, 6, 8, 10…'],
+ ['Siempre está por venir, pero nunca llega. ¿Qué es?',['manana','el manana'],'Hoy no, pero…'],
+ ['Tengo cuello pero no cabeza, brazos pero no manos. ¿Qué soy?',['camisa','camiseta','buso','saco','blusa'],'Lo usas todos los días.'],
+ ['Un granjero tiene 17 ovejas. Se mueren todas menos 9. ¿Cuántas quedan?',['9','nueve'],'"Todas menos 9".'],
+ ['Cuanto más se seca, más mojada está. ¿Qué es?',['toalla'],'La usas después de bañarte.'],
+ ['Se puede atrapar pero no lanzar. ¿Qué es?',['gripa','gripe','resfriado','resfrio','catarro'],'Pasa más en temporada de lluvias.'],
+ ['Entras a un cuarto oscuro con un solo fósforo. Hay una vela, una lámpara de aceite y una chimenea. ¿Qué enciendes primero?',['fosforo','cerillo','cerilla','el fosforo'],'Sin esto no enciendes nada.'],
+ ['¿Qué letra sigue? E, F, M, A, M, J, J, …',['a','agosto'],'Piensa en el calendario.'],
+ ['Si me tienes, quieres compartirme. Si me compartes, ya no me tienes. ¿Qué soy?',['secreto'],'Shh, no se lo digas a nadie.'],
+ ['Un ladrillo pesa 1 kilo más medio ladrillo. ¿Cuánto pesa un ladrillo?',['2','dos','2 kilos','dos kilos'],'Si medio ladrillo pesa 1 kilo…'],
+ ['Dos padres y dos hijos pescan 3 peces y cada uno se lleva uno entero. ¿Cuántas personas son?',['3','tres'],'Alguien es padre e hijo a la vez.'],
+ ['Tiene ojos y no ve, tiene agua y no la bebe. ¿Qué es? (pista: está en la cocina)',['papa','la papa'],'Se pela antes de cocinarla.'],
+ ['Sube y baja, pero nunca se mueve de su lugar. ¿Qué es?',['escalera','escaleras','temperatura'],'La usas para cambiar de piso.'],
+ ['¿Qué tiene un pie pero no camina?',['cama','mesa','lampara','silla','montaña','hongo','pie de pagina'],'Muebles…'],
+ ['Hoy es lunes. ¿Qué día será dentro de 100 días?',['miercoles'],'100 = 14 semanas + 2 días.'],
+ ['¿Cuál es el número más pequeño que, dividido entre 2, 3, 4, 5 y 6, siempre deja residuo 1?',['61','sesenta y uno'],'Busca el mínimo común múltiplo y súmale 1.'],
+ ['Un caracol sube un poste de 10 m: de día sube 3 m y de noche resbala 2 m. ¿En cuántos días llega arriba?',['8','ocho'],'El último día ya no resbala.']];
+const normA=s=>String(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[¿?¡!.,;:"']/g,' ').replace(/\b(el|la|los|las|un|una|es|son|de)\b/g,' ').replace(/\s+/g,' ').trim();
+function riddleOf(d,info){return ((info.idx*7)+((d.rq||0)))%RIDDLES.length}
+function riddleCard(d,info){const i=riddleOf(d,info),R=RIDDLES[i];const st=d.rs||'';
+ return `<div class="card" style="border-color:#4da3ff55"><div class="row sp"><h2>🧩 Acertijo del día</h2>${st==='ok'?'<span class="pill ok">Resuelto</span>':''}</div>
+ <p style="font-size:17px;font-weight:700;margin:6px 0 10px">${esc(R[0])}</p>
+ ${st==='ok'||st==='rend'?`<p class="sm">Respuesta: <b>${esc(R[1][0])}</b></p>${st==='ok'?'<p class="sm" style="color:var(--ok)">✅ ¡Bien pensado! Tu cerebro también suma XP hoy.</p>':'<p class="sm mut">La próxima la sacas. Lo importante es intentarlo sin mirar.</p>'}<button class="btn ghost sm" style="margin-top:8px" onclick="nextRiddle()">Otro acertijo</button>`
+ :`<div class="row"><input id="rq_a" placeholder="Tu respuesta" autocomplete="off"><button class="btn sm pri" onclick="checkRiddle()">Responder</button></div>
+  ${d.rt?`<p class="sm" style="color:var(--warn);margin-top:6px">No es eso. Intentos: ${d.rt}${d.rh?' · Pista: '+esc(R[2]):''}</p>`:''}
+  <div class="row" style="margin-top:8px">${!d.rh?'<button class="btn ghost sm" onclick="D().rh=1;save();render()">💡 Pista</button>':''}<button class="btn ghost sm" onclick="D().rs=\'rend\';save();render()">Me rindo</button></div>`}</div>`}
+function checkRiddle(){const d=D(),R=RIDDLES[riddleOf(d,progInfo())];const a=normA($('#rq_a').value);if(!a)return;
+ const ok=R[1].some(x=>{const n=normA(x);return a===n||(` ${a} `).includes(` ${n} `)});
+ if(ok){d.rs='ok';d.h.respira=true;S.brain=S.brain||{};S.brain.acertijos=(S.brain.acertijos||0)+1;beep(880);setTimeout(()=>beep(1320,250),150)}else{d.rt=(d.rt||0)+1;beep(300,200)}save();render()}
+function nextRiddle(){const d=D();d.rq=(d.rq||0)+1;d.rs='';d.rt=0;d.rh=0;save();render()}
+function mindsetCard(d,info){const M=MINDSET[info.idx%MINDSET.length];
+ return `<div class="card" style="background:linear-gradient(135deg,#ff7a1a22,#171b23)"><p class="sm mut">🎯 RETO DE MENTALIDAD DE HOY</p><h2 style="margin:6px 0">${M[0]}</h2><p class="sm">${M[1]}</p>
+ <button class="btn ${d.mind?'ok':'pri'}" style="margin-top:10px" onclick="toggleMind()">${d.mind?'✓ Cumplido':'Lo cumplí'}</button></div>`}
+function toggleMind(){const d=D();d.mind=!d.mind;if(d.mind)d.h.respira=true;save();render()}
+// ---- juegos ----
+const GAMES={calc:['🧮','Cálculo rápido','60 s para resolver todas las operaciones que puedas. Agilidad y concentración.'],seq:['🔢','Series lógicas','Descubre el patrón y el siguiente número. Razonamiento.'],
+ mem:['🧠','Memoria de dígitos','Recuerda secuencias cada vez más largas. Memoria de trabajo.'],stroop:['🎨','Enfoque (Stroop)','Toca el COLOR de la palabra, no lo que dice. Control mental.'],
+ puz:['🧱','Rompecabezas 8','Ordena las fichas del 1 al 8 en el menor número de movimientos. Planificación.']};
+let GAME=null;
+function stopGame(){if(GAME){clearInterval(GAME.iv);clearTimeout(GAME.to);GAME=null}}
+function brainGymCard(){const B=S.brain||{};const best={calc:B.calc?B.calc+' aciertos':'',seq:B.seq?B.seq+' seguidas':'',mem:B.mem?B.mem+' dígitos':'',stroop:B.stroop?B.stroop+' puntos':'',puz:B.puz?B.puz+' movs':''};
+ return `<div class="card"><h2>🏋️ Gimnasio mental</h2><p class="sm mut">Juegos cortos (1–3 min) para entrenar foco, memoria y lógica. Completar cualquiera cuenta como tu reto mental del día.</p>
+ <div class="grid2" style="margin-top:10px">${Object.entries(GAMES).map(([k,g])=>`<div class="stat" style="cursor:pointer;text-align:left" onclick="openGame('${k}')"><div style="font-size:26px">${g[0]}</div><b style="font-size:15px">${g[1]}</b><div class="sm mut">${best[k]?'Récord: '+best[k]:'Sin récord aún'}</div></div>`).join('')}</div>
+ <p class="sm mut" style="margin-top:8px">Acertijos resueltos: <b>${B.acertijos||0}</b></p></div>`}
+function gameShell(k,body){const g=GAMES[k];$('#layer').innerHTML=`<div class="modal"><div style="min-height:70vh"><div class="row sp"><h2>${g[0]} ${g[1]}</h2><button class="btn sm ghost" onclick="closeL()">✕</button></div><p class="sm mut">${g[2]}</p><div id="gbody" style="margin-top:14px;text-align:center">${body}</div></div></div>`}
+function gameEnd(k,score,better,label){const B=S.brain=S.brain||{};const prev=B[k];const rec=prev===undefined||better(score,prev);if(rec)B[k]=score;D().h.respira=true;save();stopGame();
+ $('#gbody').innerHTML=`<div style="font-size:54px">${rec?'🏆':'💪'}</div><h2>${label}</h2><p class="mut">${rec?'¡Nuevo récord!':'Tu récord: '+prev}</p><p class="sm" style="color:var(--ok);margin:8px 0">✅ Reto mental del día cumplido</p>
+ <div class="row" style="margin-top:12px"><button class="btn pri" onclick="openGame('${k}')">Otra vez</button><button class="btn ghost" onclick="closeL();render()">Listo</button></div>`;beep(880);setTimeout(()=>beep(1320,250),150)}
+function openGame(k){stopGame();GAME={k};({calc:gCalc,seq:gSeq,mem:gMem,stroop:gStroop,puz:gPuz})[k]()}
+const rint=(a,b)=>a+Math.floor(Math.random()*(b-a+1));
+// Cálculo rápido
+function gCalc(){gameShell('calc',`<p class="timer" id="gt" style="font-size:40px">60</p><p id="gq" style="font-size:34px;font-weight:900;margin:10px 0"></p>
+ <input id="ga" type="number" inputmode="numeric" style="text-align:center;font-size:24px;max-width:220px" autocomplete="off"><p id="gs" class="mut" style="margin-top:8px">Aciertos: 0</p>`);
+ Object.assign(GAME,{ok:0,left:60});const nq=()=>{const t=rint(0,3);let a,b,q,r;if(t===0){a=rint(12,99);b=rint(12,99);q=`${a} + ${b}`;r=a+b}else if(t===1){a=rint(30,120);b=rint(5,a);q=`${a} − ${b}`;r=a-b}else if(t===2){a=rint(3,12);b=rint(3,12);q=`${a} × ${b}`;r=a*b}else{b=rint(2,12);r=rint(2,12);a=b*r;q=`${a} ÷ ${b}`}GAME.r=r;$('#gq').textContent=q;$('#ga').value='';$('#ga').focus()};
+ nq();$('#ga').oninput=()=>{if(+$('#ga').value===GAME.r&&$('#ga').value!==''){GAME.ok++;$('#gs').textContent='Aciertos: '+GAME.ok;beep(880,60);nq()}};
+ GAME.iv=setInterval(()=>{if(!GAME)return;GAME.left--;$('#gt').textContent=GAME.left;if(GAME.left<=0)gameEnd('calc',GAME.ok,(a,b)=>a>b,GAME.ok+' aciertos en 60 s')},1000)}
+// Series lógicas
+function mkSeq(lv){const t=rint(0,Math.min(5,1+lv));let s=[];
+ if(t===0){const a=rint(1,20),d=rint(2,9);for(let i=0;i<6;i++)s.push(a+d*i)}
+ else if(t===1){const a=rint(1,4),r=rint(2,3);for(let i=0;i<6;i++)s.push(a*r**i)}
+ else if(t===2){const c=rint(0,5);for(let i=1;i<=6;i++)s.push(i*i+c)}
+ else if(t===3){let a=rint(1,5),b=rint(1,6);s=[a,b];while(s.length<6)s.push(s[s.length-1]+s[s.length-2])}
+ else if(t===4){const a=rint(2,9),d1=rint(2,6),d2=rint(1,4);let v=a;for(let i=0;i<6;i++){s.push(v);v+=i%2?-d2:d1}}
+ else{let v=rint(1,5),d=rint(1,3);for(let i=0;i<6;i++){s.push(v);v+=d;d+=rint(1,2)}}
+ return s}
+function gSeq(){Object.assign(GAME,{streak:0,lives:3});gameShell('seq','<div id="gq"></div>');seqRound()}
+function seqRound(){const s=mkSeq(GAME.streak);GAME.ans=s[5];$('#gbody').innerHTML=`<p class="mut">Racha: <b>${GAME.streak}</b> · Vidas: ${'❤️'.repeat(GAME.lives)}</p>
+ <p style="font-size:30px;font-weight:900;margin:16px 0;letter-spacing:2px">${s.slice(0,5).join(', ')}, ?</p>
+ <input id="ga" type="number" inputmode="numeric" style="text-align:center;font-size:24px;max-width:200px" autocomplete="off"><button class="btn pri" style="margin-top:10px" onclick="seqCheck()">Responder</button><p id="gm" class="sm" style="margin-top:8px"></p>`;
+ const i=$('#ga');i.focus();i.onkeydown=e=>{if(e.key==='Enter')seqCheck()}}
+function seqCheck(){if(!GAME)return;const v=$('#ga').value;if(v==='')return;if(+v===GAME.ans){GAME.streak++;beep(880,80);seqRound()}else{GAME.lives--;beep(300,200);
+ if(GAME.lives<=0)gameEnd('seq',GAME.streak,(a,b)=>a>b,GAME.streak+' series seguidas');else{$('#gm').innerHTML=`<span style="color:var(--warn)">Era ${GAME.ans}. Siguiente…</span>`;GAME.to=setTimeout(()=>GAME&&seqRound(),1400)}}}
+// Memoria de dígitos
+function gMem(){Object.assign(GAME,{n:4,best:0,lives:2});gameShell('mem','');memRound()}
+function memRound(){const seq=Array.from({length:GAME.n},()=>rint(0,9)).join('');GAME.seq=seq;let i=0;
+ $('#gbody').innerHTML=`<p class="mut">${GAME.n} dígitos · Vidas: ${'❤️'.repeat(GAME.lives)}</p><p id="gd" style="font-size:72px;font-weight:900;min-height:90px;margin:20px 0">·</p>`;
+ const show=()=>{if(!GAME)return;if(i<seq.length){$('#gd').textContent=seq[i];beep(600+seq[i]*40,90);GAME.to=setTimeout(()=>{if(!GAME)return;$('#gd').textContent='·';i++;GAME.to=setTimeout(show,250)},700)}
+  else{$('#gbody').innerHTML=`<p class="mut">Escribe los ${seq.length} dígitos en orden</p><input id="ga" inputmode="numeric" maxlength="20" style="text-align:center;font-size:28px;letter-spacing:6px;max-width:260px;margin:16px 0" autocomplete="off"><button class="btn pri" onclick="memCheck()">Comprobar</button>`;const a=$('#ga');a.focus();a.onkeydown=e=>{if(e.key==='Enter')memCheck()}}};
+ GAME.to=setTimeout(show,700)}
+function memCheck(){if(!GAME)return;const v=($('#ga').value||'').replace(/\D/g,'');if(v===GAME.seq){GAME.best=GAME.n;GAME.n++;beep(880,80);memRound()}else{GAME.lives--;beep(300,200);
+ if(GAME.lives<=0)gameEnd('mem',GAME.best,(a,b)=>a>b,`Recordaste ${GAME.best} dígitos`);else{$('#gbody').innerHTML=`<p style="color:var(--warn)">Era ${GAME.seq}. Intenta otra con ${GAME.n} dígitos…</p>`;GAME.to=setTimeout(()=>GAME&&memRound(),1500)}}}
+// Enfoque (Stroop)
+const SCOL=[['ROJO','#ff5a5f'],['AZUL','#4da3ff'],['VERDE','#35d07f'],['AMARILLO','#ffcc33']];
+function gStroop(){Object.assign(GAME,{pts:0,err:0,left:30});gameShell('stroop',`<p class="timer" id="gt" style="font-size:40px">30</p><p id="gw" style="font-size:46px;font-weight:900;margin:18px 0"></p>
+ <div class="grid2">${SCOL.map((c,i)=>`<button class="btn" style="background:var(--card2);font-size:16px" onclick="stroopTap(${i})">${c[0]}</button>`).join('')}</div><p id="gs" class="mut" style="margin-top:10px">Puntos: 0</p>`);
+ stroopNext();GAME.iv=setInterval(()=>{if(!GAME)return;GAME.left--;$('#gt').textContent=GAME.left;if(GAME.left<=0)gameEnd('stroop',GAME.pts,(a,b)=>a>b,`${GAME.pts} puntos (${GAME.err} errores)`)},1000)}
+function stroopNext(){let w=rint(0,3),c=rint(0,3);if(Math.random()<.75)while(c===w)c=rint(0,3);GAME.c=c;const e=$('#gw');e.textContent=SCOL[w][0];e.style.color=SCOL[c][1]}
+function stroopTap(i){if(!GAME||GAME.k!=='stroop'||GAME.left<=0)return;if(i===GAME.c){GAME.pts++;beep(880,50)}else{GAME.pts=Math.max(0,GAME.pts-1);GAME.err++;beep(300,120)}$('#gs').textContent='Puntos: '+GAME.pts;stroopNext()}
+// Rompecabezas de 8
+function gPuz(){let b=[1,2,3,4,5,6,7,8,0],z=8;for(let i=0;i<120;i++){const n=[z-3,z+3,z%3?z-1:-1,z%3<2?z+1:-1].filter(x=>x>=0&&x<9);const m=n[rint(0,n.length-1)];b[z]=b[m];b[m]=0;z=m}
+ if(b.join()==='1,2,3,4,5,6,7,8,0')return gPuz();Object.assign(GAME,{b,mv:0});gameShell('puz','');puzDraw()}
+function puzDraw(){$('#gbody').innerHTML=`<p class="mut">Movimientos: <b>${GAME.mv}</b></p><div style="display:grid;grid-template-columns:repeat(3,72px);gap:6px;justify-content:center;margin:14px 0">${GAME.b.map((v,i)=>`<button onclick="puzTap(${i})" style="height:72px;border:0;border-radius:12px;font-size:28px;font-weight:900;cursor:pointer;background:${v?'var(--ac)':'transparent'};color:#111">${v||''}</button>`).join('')}</div><p class="sm mut">Toca una ficha junto al espacio vacío para moverla.</p>`}
+function puzTap(i){if(!GAME||GAME.k!=='puz')return;const z=GAME.b.indexOf(0);const adj=(Math.abs(i-z)===3)||(Math.abs(i-z)===1&&Math.floor(i/3)===Math.floor(z/3));if(!adj)return;
+ GAME.b[z]=GAME.b[i];GAME.b[i]=0;GAME.mv++;beep(500,30);if(GAME.b.join()==='1,2,3,4,5,6,7,8,0')gameEnd('puz',GAME.mv,(a,b)=>a<b,`¡Resuelto en ${GAME.mv} movimientos!`);else puzDraw()}
+
 /* =================== VOZ Y SONIDO =================== */
 let AC=null;
 function beep(f=880,ms=150){try{AC=AC||new (window.AudioContext||window.webkitAudioContext)();const o=AC.createOscillator(),g=AC.createGain();o.frequency.value=f;o.connect(g);g.connect(AC.destination);g.gain.setValueAtTime(.25,AC.currentTime);g.gain.exponentialRampToValueAtTime(.001,AC.currentTime+ms/1000);o.start();o.stop(AC.currentTime+ms/1000)}catch(e){}}
@@ -749,7 +977,7 @@ async function obNav(dir){
 }
 
 /* =================== VISTAS =================== */
-const NAV=[['hoy','📅','Hoy'],['cuerpo','🧍','Cuerpo'],['ejercicios','🏋️','Ejercicios'],['comida','🥗','Comida'],['mente','🧠','Mente'],['progreso','📈','Progreso']];
+const NAV=[['hoy','📅','Hoy'],['cuerpo','🧍','Cuerpo'],['ejercicios','🏋️','Ejercicios'],['comida','🥗','Comida'],['mente','🧠','Mente'],['retos','🏆','Retos'],['progreso','📈','Progreso']];
 function render(){
  if(!AUTHREADY){$('#nav').innerHTML='';$('#app').innerHTML='<div class="wrap" style="text-align:center;padding-top:120px"><div style="font-size:54px">🔥</div><h1>FORJA</h1><p class="mut">Cargando…</p></div>';return}
  if(!USER&&!OFFLINE){renderLogin();return}
@@ -759,9 +987,10 @@ function render(){
  if(TAB==='progreso')drawChart();
  if(!splash())checkRank();
 }
-function go(t){TAB=t;window.scrollTo(0,0);render()}
+function go(t){TAB=t;SOC.msg='';SOC.okmsg='';window.scrollTo(0,0);render()}
 const V={};
 V.rangos=()=>V_RANGOS();
+V.retos=()=>V_RETOS();
 
 V.hoy=()=>{
  const info=progInfo(),d=D(),w=buildWorkout(info.type),sc=dayScore(),st=streak();
@@ -852,7 +1081,7 @@ function exModal(id){const e=EX[id];$('#layer').innerHTML=`<div class="modal" on
  <h3>❌ Error común</h3><p>${e.e}</p><h3>⬇️ Más fácil</h3><p>${e.rg}</p><h3>⬆️ Más difícil</h3><p>${e.pg}</p>
  ${CAMEX[id]?`<button class="btn pri" style="margin-top:12px" onclick="openCam('${id}',CAMK[CAMEX['${id}']].hold?30:10,null)">📷 Practicar con cámara: cuenta y corrige tu técnica</button>`:''}
  <a class="btn ghost" style="margin-top:12px;text-decoration:none" target="_blank" rel="noopener" href="https://www.youtube.com/results?search_query=${encodeURIComponent(e.n+' técnica correcta')}">▶ Ver videos de técnica en YouTube</a></div></div>`;mountFigs($('#layer'))}
-function closeL(){$('#layer').innerHTML=''}
+function closeL(){stopGame();$('#layer').innerHTML=''}
 
 V.comida=()=>{const A=S.A,m=S.p.sexo==='h';const meals=4;
  return `<h1>🥗 Nutrición</h1><p class="mut sm">El 80% del cambio físico se decide en la cocina. Sin dietas raras: comida real colombiana, porciones correctas.</p>
@@ -881,11 +1110,10 @@ V.comida=()=>{const A=S.A,m=S.p.sexo==='h';const meals=4;
 
 let BR=null;
 V.mente=()=>{const d=D(),info=progInfo();const P=JPROMPTS[info.idx%JPROMPTS.length];
- return `<h1>🧠 Mente</h1><p class="mut sm">Tu cuerpo cambia cuando tu cabeza no negocia. 5 minutos al día.</p>
- <div class="card"><h2>Respiración guiada</h2><div class="row"><button class="btn sm ${BRM==='caja'?'pri':'ghost'}" onclick="BRM='caja';render()">Caja 4-4-4-4 (foco)</button><button class="btn sm ${BRM==='suspiro'?'pri':'ghost'}" onclick="BRM='suspiro';render()">Suspiro fisiológico (calma rápida)</button></div>
-  <div class="breath" id="breath">Listo</div><p class="timer" style="font-size:30px" id="brt">5:00</p>
-  <button class="btn ${BR?'ghost':'pri'}" style="margin-top:10px" onclick="toggleBreath()">${BR?'Detener':'▶ Iniciar 5 minutos'}</button>
-  <p class="sm mut" style="margin-top:8px">${BRM==='caja'?'Inhala 4 s · sostén 4 s · exhala 4 s · sostén 4 s. Mejora el foco y reduce la tensión.':'Dos inhalaciones por la nariz (una larga y otra corta para llenar) y una exhalación larga por la boca. Es de las técnicas más rápidas para bajar el estrés.'}</p></div>
+ return `<h1>🧠 Mente</h1><p class="mut sm">Tu cuerpo cambia cuando tu cabeza no negocia. Entrena tu mente como entrenas tu cuerpo: un reto al día.</p>
+ ${mindsetCard(d,info)}
+ ${riddleCard(d,info)}
+ ${brainGymCard()}
  <div class="card"><h2>Diario de hoy ${d.h.diario?'✅':''}</h2>
   <label>1. Hoy agradezco…</label><textarea id="j1" rows="2">${esc(d.j.a||'')}</textarea>
   <label>2. ${P}</label><textarea id="j2" rows="2">${esc(d.j.b||'')}</textarea>
@@ -1027,7 +1255,8 @@ function sanitizeState(o){
   tests:(o.tests||[]).filter(t=>DRE.test(t.d)).map(t=>({d:t.d,flex:N(t.flex),sent:N(t.sent),plank:N(t.plank)})),
   sessions:(o.sessions||[]).filter(s=>DRE.test(s.d)).map(s=>({d:s.d,t:clean(s.t),min:N(s.min),f:s.f?clean(s.f):undefined})),
   photos:(o.photos||[]).filter(x=>DRE.test(x.d)&&/^data:image\/jpeg;base64,[A-Za-z0-9+/=]+$/.test(x.img)).slice(0,16),
-  wl:Object.fromEntries(Object.entries(o.wl||{}).filter(([k])=>EX[k]).map(([k,L])=>[k,(Array.isArray(L)?L:[]).filter(x=>DRE.test(x.d)).map(x=>({d:x.d,kg:N(x.kg)})).slice(-60)])),notif:!!o.notif,autolock:[1,5,15,60].includes(N(o.autolock))?N(o.autolock):5,
+  wl:Object.fromEntries(Object.entries(o.wl||{}).filter(([k])=>EX[k]).map(([k,L])=>[k,(Array.isArray(L)?L:[]).filter(x=>DRE.test(x.d)).map(x=>({d:x.d,kg:N(x.kg)})).slice(-60)])),notif:!!o.notif,friends:(Array.isArray(o.friends)?o.friends:[]).filter(x=>typeof x==='string'&&/^[A-Za-z0-9]{10,40}$/.test(x)).slice(0,50),
+  code:/^[A-Z2-9]{6}$/.test(o.code)?o.code:undefined,alias:o.alias?String(o.alias).replace(/[<>"'`]/g,'').slice(0,24):undefined,publico:!!o.publico,brain:Object.fromEntries(Object.entries(o.brain||{}).filter(([k])=>['calc','seq','mem','stroop','puz','acertijos'].includes(k)).map(([k,v])=>[k,N(v)])),autolock:[1,5,15,60].includes(N(o.autolock))?N(o.autolock):5,
   adj:Math.min(1.5,Math.max(0.7,N(o.adj,1))),voz:o.voz!==false,lvl:[0,1,2].includes(o.lvl)?o.lvl:0,rk:N(o.rk,0),splash:DRE.test(o.splash)?o.splash:undefined,A:analyze(P)}}
 function importD(inp){const f=inp.files[0];if(!f)return;if(f.size>8e6){alert('Archivo demasiado grande.');return}
  f.text().then(t=>{try{const s=sanitizeState(JSON.parse(t));if(S&&!confirm('Esto reemplazará los datos de tu cuenta con los del archivo. ¿Continuar?'))return;

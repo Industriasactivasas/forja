@@ -1,5 +1,5 @@
 // FORJA: funciona sin internet y envía recordatorios. Sube la versión al cambiar los archivos.
-const CACHE = 'forja-v4';
+const CACHE = 'forja-v5';
 const CDN = 'https://www.gstatic.com';   // SDK de Firebase: se guarda para poder abrir la app sin internet
 const FILES = ['./', './index.html', './manifest.json', './icon.svg', './icon-192.png', './icon-512.png'];
 
